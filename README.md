@@ -57,6 +57,17 @@ uv sync --all-extras
 
 # Run tests
 uv run pytest -v
+
+# Start the server (from ../server)
+cd ../server && cargo run
+```
+
+## Configuration
+
+Set the `OSR_SERVER_URL` environment variable to point to your server:
+
+```bash
+export OSR_SERVER_URL=http://localhost:8000
 ```
 
 ## Overview
