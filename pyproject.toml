@@ -1,0 +1,18 @@
+[project]
+name = "openshots"
+version = "0.1.0"
+description = "Shared dynamic database of quantum computing circuit shots on real hardware - Open data for quantum computing"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "httpx>=0.27.0",
+    "qiskit>=1.0.0",
+]
+
+[project.optional-dependencies]
+ibm = ["qiskit-ibm-runtime>=0.43.1"]
+dev = ["pytest>=8.0.0", "pytest-httpx>=0.30.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
