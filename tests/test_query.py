@@ -59,7 +59,7 @@ class TestResultsQuery:
 class TestResultsQueryExecution:
     def test_iter_returns_counts(self) -> None:
         mock_client = MagicMock()
-        mock_client.query_shots.return_value = [
+        mock_client.iter_shots.return_value = [
             make_shot("1", {"00": 100, "11": 100}),
             make_shot("2", {"01": 50, "10": 50}),
         ]
@@ -74,7 +74,7 @@ class TestResultsQueryExecution:
 
     def test_iter_as_int(self) -> None:
         mock_client = MagicMock()
-        mock_client.query_shots.return_value = [
+        mock_client.iter_shots.return_value = [
             make_shot("1", {"00": 100, "11": 100}),
         ]
 
@@ -85,7 +85,7 @@ class TestResultsQueryExecution:
 
     def test_concat(self) -> None:
         mock_client = MagicMock()
-        mock_client.query_shots.return_value = [
+        mock_client.iter_shots.return_value = [
             make_shot("1", {"00": 100, "11": 100}),
             make_shot("2", {"00": 50, "01": 50}),
         ]
@@ -97,7 +97,7 @@ class TestResultsQueryExecution:
 
     def test_concat_as_int(self) -> None:
         mock_client = MagicMock()
-        mock_client.query_shots.return_value = [
+        mock_client.iter_shots.return_value = [
             make_shot("1", {"00": 100, "11": 100}),
             make_shot("2", {"00": 50, "01": 50}),
         ]
@@ -109,26 +109,27 @@ class TestResultsQueryExecution:
 
     def test_count(self) -> None:
         mock_client = MagicMock()
-        mock_client.query_shots.return_value = [
+        mock_client.iter_shots.return_value = [
             make_shot("1", {"00": 100}),
             make_shot("2", {"00": 100}),
             make_shot("3", {"00": 100}),
         ]
 
         query = ResultsQuery(_client=mock_client)
+        mock_client.iter_collections.return_value = [type("Counts", (), {"weighted": False})() for _ in range(3)]
         assert query.count() == 3
 
     def test_first(self) -> None:
         mock_client = MagicMock()
         shot = make_shot("1", {"00": 100})
-        mock_client.query_shots.return_value = [shot]
+        mock_client.iter_shots.return_value = iter([shot])
 
         query = ResultsQuery(_client=mock_client)
         assert query.first() == shot
 
     def test_first_empty(self) -> None:
         mock_client = MagicMock()
-        mock_client.query_shots.return_value = []
+        mock_client.iter_shots.return_value = iter([])
 
         query = ResultsQuery(_client=mock_client)
         assert query.first() is None
@@ -136,9 +137,10 @@ class TestResultsQueryExecution:
     def test_all(self) -> None:
         mock_client = MagicMock()
         shots = [make_shot("1", {"00": 100}), make_shot("2", {"11": 100})]
-        mock_client.query_shots.return_value = shots
+        mock_client.iter_shots.return_value = shots
 
         query = ResultsQuery(_client=mock_client)
+        mock_client.query_shots.return_value = shots
         assert query.all() == shots
 
 

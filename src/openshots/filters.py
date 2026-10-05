@@ -5,7 +5,7 @@ operators to create filter conditions.
 
 Example:
     >>> from openshots.filters import backend, n_qubits
-    >>> osr.results().filter(backend == "ibm_aachen" and n_qubits == 50)
+    >>> osr.results().filter((backend == "ibm_aachen") & (n_qubits == 50))
 """
 
 from openshots.query import FilterField

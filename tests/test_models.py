@@ -84,17 +84,20 @@ class TestShot:
 
 
 class TestCircuitToHash:
-    def test_hash_string(self) -> None:
-        """Hash of a simple string should be consistent."""
-        hash1 = circuit_to_hash("test_circuit")
-        hash2 = circuit_to_hash("test_circuit")
-        assert hash1 == hash2
-        assert len(hash1) == 64  # SHA256 hex digest
+    def test_unsupported_object_has_no_fingerprint(self):
+        with pytest.raises(TypeError):
+            circuit_to_hash("test_circuit")
 
-    def test_different_inputs_different_hash(self) -> None:
-        hash1 = circuit_to_hash("circuit_a")
-        hash2 = circuit_to_hash("circuit_b")
-        assert hash1 != hash2
+    def test_bound_parameters_change_identity(self):
+        from qiskit import QuantumCircuit
+        from qiskit.circuit import Parameter
+        qc = QuantumCircuit(1, 1)
+        angle = Parameter("theta")
+        qc.rx(angle, 0)
+        qc.measure(0, 0)
+        with pytest.raises(ValueError, match="bind"):
+            circuit_to_hash(qc)
+        assert circuit_to_hash(qc.assign_parameters([0.1])) != circuit_to_hash(qc.assign_parameters([0.2]))
 
     @pytest.mark.skipif(
         not _has_qiskit(), reason="Qiskit not installed"

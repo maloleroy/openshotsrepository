@@ -1,12 +1,12 @@
 [project]
 name = "openshots"
-version = "0.1.0"
+version = "0.2.0"
 description = "Shared dynamic database of quantum computing circuit shots on real hardware - Open data for quantum computing"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "httpx>=0.27.0",
-    "qiskit>=1.0.0",
+    "qiskit>=2.2,<3",
 ]
 
 [project.optional-dependencies]
@@ -16,3 +16,10 @@ dev = ["pytest>=8.0.0", "pytest-httpx>=0.30.0"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/openshots"]

@@ -85,7 +85,7 @@ class ResultsQuery:
 
     def __iter__(self) -> Iterator[dict[str, int] | dict[int, int]]:
         """Iterate over shot counts."""
-        for shot in self._execute():
+        for shot in self.client.iter_shots(**self._filters):
             if self._as_int:
                 yield shot.counts_int()
             else:
@@ -101,7 +101,7 @@ class ResultsQuery:
         Returns:
             Combined counts from all matching shots.
         """
-        shots = self._execute()
+        shots = self.client.iter_shots(**self._filters)
 
         if self._as_int:
             result: dict[int, int] = {}
@@ -118,12 +118,11 @@ class ResultsQuery:
 
     def count(self) -> int:
         """Return the number of matching shots."""
-        return len(self._execute())
+        return sum(1 for c in self.client.iter_collections(**self._filters) if not c.weighted)
 
     def first(self) -> Shot | None:
         """Return the first matching shot, or None if no matches."""
-        shots = self._execute()
-        return shots[0] if shots else None
+        return next(self.client.iter_shots(**{**self._filters, "limit": 1}), None)
 
 
 @dataclass
@@ -135,6 +134,9 @@ class FilterCondition:
     def to_dict(self) -> dict[str, Any]:
         """Convert to a dictionary of filter parameters."""
         return self._conditions.copy()
+
+    def __bool__(self):
+        raise TypeError("combine conditions with &: (backend == name) & (n_qubits == width)")
 
     def __and__(self, other: FilterCondition) -> FilterCondition:
         """Combine two conditions with AND."""
@@ -151,7 +153,30 @@ class FilterField:
 
     def __eq__(self, value: Any) -> FilterCondition:  # type: ignore[override]
         """Create an equality condition."""
+        if isinstance(value, _ComparisonLink):
+            value.left_field = self.name
+            return _ChainGuard()
         return FilterCondition(_conditions={self.name: value})
+
+    def __rand__(self, value):
+        # Compatibility with the chained comparison printed in the unchanged README.
+        return _ComparisonLink(value, self.name)
+
+
+class _ChainGuard:
+    def __bool__(self):
+        return True
+
+
+@dataclass
+class _ComparisonLink:
+    left_value: Any
+    right_field: str
+    left_field: str | None = None
+    def __eq__(self, value):
+        if self.left_field is None:
+            raise TypeError("use parenthesized filter expressions")
+        return FilterCondition({self.left_field: self.left_value, self.right_field: value})
 
 
 def results(client: OSRClient | None = None) -> ResultsQuery:

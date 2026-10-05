@@ -34,7 +34,7 @@ class TestIntegration:
         shot = client.store_shot(
             counts={"00": 500, "11": 500},
             backend="integration_test",
-            circuit_hash="test_circuit_hash_123",
+            circuit_hash="a" * 64,
             n_qubits=2,
             tags={"test": True},
         )
@@ -54,7 +54,7 @@ class TestIntegration:
             client.store_shot(
                 counts={"00": 100 + i},
                 backend=backend,
-                circuit_hash=f"hash_{i}",
+                circuit_hash=str(i) * 64,
                 n_qubits=2,
             )
 
@@ -71,7 +71,7 @@ class TestIntegration:
         client.store_shot(
             counts={"00": 250, "11": 250},
             backend="query_interface_test",
-            circuit_hash="test_hash_query",
+            circuit_hash="b" * 64,
             n_qubits=2,
         )
 
@@ -93,12 +93,12 @@ class TestIntegration:
             client.store_shot(
                 counts={"00": 100, "11": 100},
                 backend="concat_test",
-                circuit_hash="concat_hash",
+                circuit_hash="c" * 64,
                 n_qubits=2,
             )
 
         # Concat results
-        query = results_int(client).filter(backend="concat_test", circuit_hash="concat_hash")
+        query = results_int(client).filter(backend="concat_test", circuit_hash="c" * 64)
         combined = query.concat()
 
         assert isinstance(combined, dict)

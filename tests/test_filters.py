@@ -31,7 +31,17 @@ class TestFilterFields:
 
 class TestCircuitFilter:
     def test_circuit_filter_hashes_input(self) -> None:
-        condition = circuit == "test_circuit_string"
+        from qiskit import QuantumCircuit
+        condition = circuit == QuantumCircuit(2)
         result = condition.to_dict()
         assert "circuit_hash" in result
         assert len(result["circuit_hash"]) == 64  # SHA256 hex
+
+
+def test_readme_expression_preserves_both_filters():
+    assert (backend == "ibm_aachen" & n_qubits == 5).to_dict() == {"backend": "ibm_aachen", "n_qubits": 5}
+
+
+def test_python_and_does_not_silently_drop_a_filter():
+    with pytest.raises(TypeError, match="combine"):
+        (backend == "ibm_aachen") and (n_qubits == 5)

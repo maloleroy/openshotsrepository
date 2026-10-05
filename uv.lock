@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.13"
 
 [[package]]
@@ -329,8 +329,8 @@ wheels = [
 
 [[package]]
 name = "openshots"
-version = "0.1.0"
-source = { virtual = "." }
+version = "0.2.0"
+source = { editable = "." }
 dependencies = [
     { name = "httpx" },
     { name = "qiskit" },
@@ -350,7 +350,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
     { name = "pytest-httpx", marker = "extra == 'dev'", specifier = ">=0.30.0" },
-    { name = "qiskit", specifier = ">=1.0.0" },
+    { name = "qiskit", specifier = ">=2.2,<3" },
     { name = "qiskit-ibm-runtime", marker = "extra == 'ibm'", specifier = ">=0.43.1" },
 ]
 provides-extras = ["ibm", "dev"]
