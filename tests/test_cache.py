@@ -1,156 +1,84 @@
-"""Tests for the caching layer."""
-
+from types import SimpleNamespace
+from unittest.mock import Mock
+import numpy as np
 import pytest
-from unittest.mock import MagicMock, PropertyMock
-from datetime import datetime
+import httpx
+from qiskit import QuantumCircuit, ClassicalRegister, QuantumRegister
+from qiskit.circuit import Parameter
+from qiskit.primitives import StatevectorSampler, BitArray, DataBin, SamplerPubResult, PrimitiveResult
+from openshots.cache import SamplerCache,CachedResult,CachedJob,_joint_counts
 
-from openshots.cache import SamplerCache, CachedJob, CachedResult
-from openshots.models import Shot, ShotMetadata
+class V2Sampler:
+    backend=SimpleNamespace(name='device',simulator=False)
+    def __init__(self):
+        self.calls=[]
+    def run(self, pubs, *, shots=None):
+        self.calls.append((pubs,shots))
+        return StatevectorSampler(seed=123).run(pubs,shots=shots)
 
+def client(hits):
+    c=Mock()
+    c.sample_cache.side_effect=hits
+    return c
 
-class TestCachedResult:
-    def test_from_counts(self) -> None:
-        counts = {"00": 500, "11": 500}
-        result = CachedResult.from_counts(counts)
+def hit(counts):
+    return {'hit':True,'counts':counts,'collection_ids':['old-run'], 'shots':sum(counts.values())}
 
-        assert len(result.quasi_dists) == 1
-        assert result.quasi_dists[0] == {0: 0.5, 3: 0.5}
-        assert result.metadata[0]["shots"] == 1000
+def circuit():
+    q=QuantumRegister(2,'q');a=ClassicalRegister(1,'alpha');b=ClassicalRegister(1,'beta')
+    qc=QuantumCircuit(q,a,b);qc.h(0);qc.cx(0,1);qc.measure(0,a);qc.measure(1,b)
+    return qc
 
-    def test_from_counts_with_explicit_shots(self) -> None:
-        counts = {"00": 500, "11": 500}
-        result = CachedResult.from_counts(counts, shots=2000)
+def test_normalization_rejects_wrong_shot_total():
+    assert CachedResult.from_counts({'00':5,'11':5}).quasi_dists==[{0:0.5,3:0.5}]
+    with pytest.raises(ValueError): CachedResult.from_counts({'00':5,'11':5},20)
 
-        assert result.quasi_dists[0] == {0: 0.25, 3: 0.25}
-        assert result.metadata[0]["shots"] == 2000
+def test_v2_batch_and_joint_registers():
+    sampler=V2Sampler(); c=client([hit({'00':3,'11':5}),hit({'01':8})])
+    job=SamplerCache(sampler,c).run([circuit(),circuit()],shots=8)
+    assert job.from_cache and not sampler.calls
+    result=job.result()
+    assert len(result)==2
+    assert _joint_counts(circuit(),result[0].data,()) == {0:3,3:5}
+    assert _joint_counts(circuit(),result[1].data,()) == {1:8}
+    assert result[0].data.alpha.get_counts()=={'0':3,'1':5}
+    assert result[0].metadata['osr']['shot_order']=='reconstructed_from_counts'
 
+def test_parameter_sweep_shape_and_pub_shots():
+    theta=Parameter('theta');qc=QuantumCircuit(1,1);qc.rx(theta,0);qc.measure(0,0)
+    sampler=V2Sampler();c=client([hit({'0':3}),hit({'1':3})])
+    result=SamplerCache(sampler,c).run([(qc,[[0.0],[3.14]],3)],shots=99).result()
+    assert result[0].data.c.shape==(2,)
+    assert result[0].data.c.get_counts(0)=={'0':3}
+    assert result[0].data.c.get_counts(1)=={'1':3}
+    calls=c.sample_cache.call_args_list
+    assert calls[0].kwargs['circuit_hash']!=calls[1].kwargs['circuit_hash']
+    assert calls[0].kwargs['shots']==3
 
-class TestCachedJob:
-    def test_result_from_cache(self) -> None:
-        result = CachedResult.from_counts({"00": 100})
-        job = CachedJob(_result=result, _from_cache=True)
+def test_one_miss_delegates_entire_batch():
+    sampler=V2Sampler();c=client([hit({'00':8}),{'hit':False}])
+    job=SamplerCache(sampler,c,auto_store=False).run([circuit(),circuit()],shots=8)
+    assert not job.from_cache
+    assert len(sampler.calls[0][0])==2
+    assert len(job.result())==2
 
-        assert job.from_cache is True
-        assert job.result() is result
+def test_http_failure_delegates_and_autostores_once():
+    sampler=V2Sampler();c=client([httpx.ConnectError('offline')]);c.store_circuit.return_value={'id':'circuit-id','circuit_hash':'a'*64};c.create_resource.return_value={'id':'execution-id'}
+    job=SamplerCache(sampler,c).run(circuit(),shots=16)
+    result=job.result();assert job.result() is result
+    assert c.store_collection.call_count==1
+    values=c.store_collection.call_args.args[0]
+    assert sum(values.values())==16
+    assert set(values)<= {0,3}
+    assert c.store_collection.call_args.kwargs['metadata']['result_kind']=='hardware_counts'
 
-    def test_result_from_backend(self) -> None:
-        backend_result = MagicMock()
-        backend_job = MagicMock()
-        backend_job.result.return_value = backend_result
+def test_corrupt_cache_is_rejected():
+    with pytest.raises(ValueError,match='cache response'):
+        SamplerCache(V2Sampler(),client([hit({'00':7})])).run(circuit(),shots=8)
 
-        job = CachedJob(_backend_job=backend_job, _from_cache=False)
-
-        assert job.from_cache is False
-        assert job.result() is backend_result
-
-    def test_result_no_data_raises(self) -> None:
-        job = CachedJob()
-        with pytest.raises(RuntimeError, match="No result available"):
-            job.result()
-
-
-class TestSamplerCache:
-    def test_infer_backend_name(self) -> None:
-        mock_sampler = MagicMock()
-        mock_sampler.backend = MagicMock(name="ibm_aachen")
-        mock_sampler.backend.name = "ibm_aachen"
-
-        cache = SamplerCache(sampler=mock_sampler)
-        assert cache._backend_name == "ibm_aachen"
-
-    def test_infer_backend_name_unknown(self) -> None:
-        mock_sampler = MagicMock(spec=[])  # No attributes
-
-        cache = SamplerCache(sampler=mock_sampler)
-        assert cache._backend_name == "unknown"
-
-    def test_run_cache_hit(self) -> None:
-        mock_sampler = MagicMock()
-        mock_client = MagicMock()
-
-        # Mock a cached shot with enough data
-        cached_shot = Shot(
-            id="cached-1",
-            counts={"00": 600, "11": 600},
-            metadata=ShotMetadata(
-                backend="ibm_aachen",
-                n_qubits=2,
-                timestamp=datetime.now(),
-                circuit_hash="test_hash",
-            ),
-        )
-        mock_client.query_shots.return_value = [cached_shot]
-
-        cache = SamplerCache(sampler=mock_sampler, client=mock_client)
-
-        # Mock circuit
-        mock_circuit = MagicMock()
-        mock_circuit.num_qubits = 2
-
-        job = cache.run(mock_circuit, shots=1024)
-
-        assert job.from_cache is True
-        mock_sampler.run.assert_not_called()
-
-    def test_run_cache_miss(self) -> None:
-        mock_sampler = MagicMock()
-        mock_sampler.run.return_value = MagicMock()
-
-        mock_client = MagicMock()
-        mock_client.query_shots.return_value = []  # No cached data
-
-        cache = SamplerCache(sampler=mock_sampler, client=mock_client)
-
-        mock_circuit = MagicMock()
-        mock_circuit.num_qubits = 2
-
-        job = cache.run(mock_circuit, shots=1024)
-
-        assert job.from_cache is False
-        mock_sampler.run.assert_called_once()
-
-    def test_run_cache_insufficient_shots(self) -> None:
-        mock_sampler = MagicMock()
-        mock_sampler.run.return_value = MagicMock()
-
-        mock_client = MagicMock()
-
-        # Cache has only 500 shots, but we need 1024
-        cached_shot = Shot(
-            id="cached-1",
-            counts={"00": 250, "11": 250},
-            metadata=ShotMetadata(
-                backend="ibm_aachen",
-                n_qubits=2,
-                timestamp=datetime.now(),
-                circuit_hash="test_hash",
-            ),
-        )
-        mock_client.query_shots.return_value = [cached_shot]
-
-        cache = SamplerCache(sampler=mock_sampler, client=mock_client)
-
-        mock_circuit = MagicMock()
-        mock_circuit.num_qubits = 2
-
-        job = cache.run(mock_circuit, shots=1024)
-
-        assert job.from_cache is False
-        mock_sampler.run.assert_called_once()
-
-    def test_run_cache_error_falls_back(self) -> None:
-        mock_sampler = MagicMock()
-        mock_sampler.run.return_value = MagicMock()
-
-        mock_client = MagicMock()
-        mock_client.query_shots.side_effect = Exception("Connection error")
-
-        cache = SamplerCache(sampler=mock_sampler, client=mock_client)
-
-        mock_circuit = MagicMock()
-        mock_circuit.num_qubits = 2
-
-        job = cache.run(mock_circuit, shots=1024)
-
-        assert job.from_cache is False
-        mock_sampler.run.assert_called_once()
+def test_callback_and_job_methods():
+    backend=Mock();backend.result.return_value=object();callback=Mock()
+    job=CachedJob(_backend_job=backend,_on_result=callback)
+    assert job.result() is job.result()
+    callback.assert_called_once()
+    with pytest.raises(RuntimeError): CachedJob().result()
