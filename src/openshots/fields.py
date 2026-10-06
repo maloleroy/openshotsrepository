@@ -74,6 +74,7 @@ def project(descriptor: FieldDescriptor, shot):
     Optimization chooses the numeric tie-break direction for equally frequent
     outcomes. An absent estimate remains None; no objective is invented.
     """
+    value: Any
     if descriptor.name == "counts":
         value = shot.counts
     elif descriptor.name == "solution":

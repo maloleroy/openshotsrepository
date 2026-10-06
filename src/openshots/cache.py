@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol
 from uuid import uuid4
 
 import httpx
@@ -17,9 +17,9 @@ from openshots.models import circuit_to_hash
 log = logging.getLogger(__name__)
 
 
-@runtime_checkable
 class SamplerLike(Protocol):
-    def run(self, circuits: Any, **kwargs: Any) -> Any: ...
+    @property
+    def run(self) -> Callable[..., Any]: ...
 
 
 @dataclass
@@ -30,7 +30,7 @@ class CachedJob:
     _on_result: Callable | None = None
     _cache_job_id: str = field(default_factory=lambda: str(uuid4()))
 
-    def result(self, *args, **kwargs):
+    def result(self, *args, **kwargs) -> Any:
         if self._result is None:
             if self._backend_job is None:
                 raise RuntimeError("No result available")
@@ -47,7 +47,7 @@ class CachedJob:
     def from_cache(self):
         return self._from_cache
 
-    def __getattr__(self, name):
+    def __getattr__(self, name) -> Any:
         if self._backend_job is not None:
             return getattr(self._backend_job, name)
         if name == "job_id":
@@ -133,8 +133,9 @@ class SamplerCache:
         ):
             return "simulation_counts"
         simulator = getattr(obj, "simulator", None)
-        if hasattr(obj, "configuration"):
-            simulator = getattr(obj.configuration(), "simulator", simulator)
+        configuration = getattr(obj, "configuration", None)
+        if callable(configuration):
+            simulator = getattr(configuration(), "simulator", simulator)
         if simulator is True:
             return "simulation_counts"
         if simulator is False or type(self.sampler).__module__.startswith(
@@ -144,9 +145,11 @@ class SamplerCache:
         return "unknown_counts"
 
     def _lookup(self, circuit, shots):
+        backend_name = self._backend_name
         if (
             self._origin() not in {"hardware_counts", "unknown_counts"}
-            or self._backend_name == "unknown"
+            or backend_name is None
+            or backend_name == "unknown"
             or not 1 <= circuit.num_clbits <= 256
         ):
             return None
@@ -157,7 +160,7 @@ class SamplerCache:
             return None
         try:
             response = self.osr_client.sample_cache(
-                backend=self._backend_name,
+                backend=backend_name,
                 circuit_hash=fingerprint,
                 n_qubits=circuit.num_clbits,
                 shots=shots,
@@ -276,8 +279,9 @@ class SamplerCache:
         if len(hits) == len(pubs):
             results = []
             for pub, pub_hits in zip(pubs, hits, strict=True):
+                pub_shots = pub.shots if pub.shots is not None else shots
                 array = np.empty(
-                    pub.shape + (pub.shots, (pub.circuit.num_clbits + 7) // 8),
+                    pub.shape + (pub_shots, (pub.circuit.num_clbits + 7) // 8),
                     dtype=np.uint8,
                 )
                 for loc, hit in zip(np.ndindex(pub.shape), pub_hits, strict=True):
@@ -300,7 +304,7 @@ class SamplerCache:
                     SamplerPubResult(
                         DataBin(shape=pub.shape, **data),
                         {
-                            "shots": pub.shots,
+                            "shots": pub_shots,
                             "osr": {
                                 "shot_order": "reconstructed_from_counts",
                                 "collection_ids": [

@@ -127,7 +127,7 @@ def test_qasm_unsupported_circuit_has_explicit_qpy_fingerprint():
     from openshots.models import circuit_fingerprint
 
     qc = QuantumCircuit(1, 1)
-    qc.initialize([1.0, 0.0], 0)
+    qc.initialize([1.0, 0.0], [0])
     qc.measure(0, 0)
     payload, scheme, format, _ = circuit_fingerprint(qc)
     assert scheme == "artifact-sha256-v1" and format == "qpy"

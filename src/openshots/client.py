@@ -26,7 +26,9 @@ class OSRClient:
     @property
     def client(self) -> httpx.Client:
         if self._client is None:
-            self._client = httpx.Client(base_url=self.base_url, timeout=self.timeout)
+            self._client = httpx.Client(
+                base_url=self.base_url or "http://localhost:8000", timeout=self.timeout
+            )
         return self._client
 
     def close(self):
@@ -166,9 +168,9 @@ class OSRClient:
             raise ValueError("empty collection")
         return self.finalize_upload(upload["id"], expected_chunks=count)
 
-    def store_collection(
+    def store_collection[KeyT: str | int](
         self,
-        values: Mapping[str | int, int | float],
+        values: Mapping[KeyT, int | float],
         *,
         metadata: dict,
         idempotency_key=None,

@@ -24,8 +24,8 @@ def state_int(state: str | int, width: int) -> int:
     return state
 
 
-def normalize(
-    values: Mapping[str | int, int | float], width: int, weighted: bool = False
+def normalize[KeyT: str | int](
+    values: Mapping[KeyT, int | float], width: int, weighted: bool = False
 ) -> list[tuple[int, int | float]]:
     output = {}
     for key, value in values.items():
