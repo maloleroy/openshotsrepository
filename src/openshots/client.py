@@ -134,8 +134,13 @@ class OSRClient:
         )
         response.raise_for_status()
 
-    def finalize_upload(self, upload_id: str) -> Collection:
-        return Collection(self._json("POST", f"/uploads/{upload_id}/finalize"), self)
+    def finalize_upload(
+        self, upload_id: str, *, expected_chunks: int | None = None
+    ) -> Collection:
+        params = {} if expected_chunks is None else {"expected_chunks": expected_chunks}
+        return Collection(
+            self._json("POST", f"/uploads/{upload_id}/finalize", params=params), self
+        )
 
     def store_entries(
         self,
@@ -159,12 +164,7 @@ class OSRClient:
             self.put_chunk(upload["id"], count - 1, payload)
         if not count:
             raise ValueError("empty collection")
-        if (
-            upload["completed"]
-            and self.get_collection(upload["id"]).metadata["chunks"] != count
-        ):
-            raise ValueError("idempotent retry has a different number of chunks")
-        return self.finalize_upload(upload["id"])
+        return self.finalize_upload(upload["id"], expected_chunks=count)
 
     def store_collection(
         self,

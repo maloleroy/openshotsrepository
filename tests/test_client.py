@@ -79,7 +79,9 @@ def test_upload_and_get_shot(httpx_mock):
         url="http://localhost:8000/uploads/one/chunks/0", method="PUT", status_code=204
     )
     httpx_mock.add_response(
-        url="http://localhost:8000/uploads/one/finalize", method="POST", json=metadata()
+        url="http://localhost:8000/uploads/one/finalize?expected_chunks=1",
+        method="POST",
+        json=metadata(),
     )
     block_response(httpx_mock)
     httpx_mock.add_response(
@@ -119,6 +121,32 @@ def test_invalid_count_input():
         pytest.raises(ValueError, match="circuit or circuit_hash"),
     ):
         client.store_shot({"00": 1}, backend="device", n_qubits=2)
+
+
+def test_shorter_resumed_upload_rejects_extra_staged_chunks(httpx_mock):
+    httpx_mock.add_response(
+        url="http://localhost:8000/uploads",
+        method="POST",
+        json={"id": "resumed", "completed": False},
+    )
+    httpx_mock.add_response(
+        url="http://localhost:8000/uploads/resumed/chunks/0",
+        method="PUT",
+        status_code=204,
+    )
+    httpx_mock.add_response(
+        url="http://localhost:8000/uploads/resumed/finalize?expected_chunks=1",
+        method="POST",
+        status_code=409,
+        json={"error": "upload has different number of chunks"},
+    )
+    with OSRClient() as client, pytest.raises(httpx.HTTPStatusError) as error:
+        client.store_entries(
+            [(0, 4)],
+            metadata={"n_qubits": 2, "backend": "device"},
+            idempotency_key="interrupted",
+        )
+    assert error.value.response.status_code == 409
 
 
 def test_explicit_server_url_takes_precedence_over_environment(monkeypatch):
