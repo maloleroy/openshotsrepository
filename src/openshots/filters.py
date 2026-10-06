@@ -8,11 +8,8 @@ Example:
     >>> osr.results().filter((backend == "ibm_aachen") & (n_qubits == 50))
 """
 
-from openshots.query import FilterField
 from openshots.models import circuit_to_hash
-from openshots.query import FilterCondition
-from typing import Any
-
+from openshots.query import FilterCondition, FilterField
 
 # Pre-defined filter fields
 backend = FilterField("backend")
@@ -30,7 +27,7 @@ class CircuitFilter:
 
     name = "circuit_hash"
 
-    def __eq__(self, value: Any) -> FilterCondition:  # type: ignore[override]
+    def __eq__(self, value: object) -> FilterCondition:  # type: ignore[override]
         """Create an equality condition using the circuit's hash."""
         return FilterCondition(_conditions={self.name: circuit_to_hash(value)})
 

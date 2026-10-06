@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Iterator
+from typing import TYPE_CHECKING, Any
 
 from openshots.models import Shot, circuit_to_hash
 
@@ -21,6 +22,7 @@ class ResultsQuery:
     _client: OSRClient | None = None
     _filters: dict[str, Any] = field(default_factory=dict)
     _as_int: bool = False
+    _projections: tuple = ()
 
     def filter(
         self,
@@ -30,6 +32,7 @@ class ResultsQuery:
         circuit: Any | None = None,
         circuit_hash: str | None = None,
         n_qubits: int | None = None,
+        **metadata_filters: Any,
     ) -> ResultsQuery:
         """Add filter conditions to the query.
 
@@ -46,7 +49,25 @@ class ResultsQuery:
         Returns:
             A new ResultsQuery with the filters applied.
         """
+        allowed = {
+            "result_kind",
+            "circuit_association",
+            "problem_id",
+            "execution_id",
+            "circuit_id",
+            "supersedes_id",
+            "qaoa_p",
+            "calibration_id",
+            "executed_after",
+            "executed_before",
+            "include_superseded",
+        }
+        if set(metadata_filters) - allowed:
+            raise TypeError(
+                f"unknown filter fields: {sorted(set(metadata_filters) - allowed)}"
+            )
         new_filters = self._filters.copy()
+        new_filters.update(metadata_filters)
 
         # Handle FilterCondition
         if condition is not None:
@@ -68,6 +89,7 @@ class ResultsQuery:
             _client=self._client,
             _filters=new_filters,
             _as_int=self._as_int,
+            _projections=self._projections,
         )
 
     @property
@@ -83,17 +105,23 @@ class ResultsQuery:
         """Execute the query and return results."""
         return self.client.query_shots(**self._filters)
 
-    def __iter__(self) -> Iterator[dict[str, int] | dict[int, int]]:
+    def __iter__(self) -> Iterator[dict[str, int] | dict[int, int] | tuple[Any, ...]]:
         """Iterate over shot counts."""
         for shot in self.client.iter_shots(**self._filters):
-            if self._as_int:
+            if self._projections:
+                from openshots.fields import project
+
+                yield tuple(
+                    project(descriptor, shot) for descriptor in self._projections
+                )
+            elif self._as_int:
                 yield shot.counts_int()
             else:
                 yield shot.counts
 
-    def all(self) -> list[Shot]:
+    def all(self) -> list[Shot] | list[tuple[Any, ...]]:
         """Return all matching shots as Shot objects."""
-        return self._execute()
+        return list(self) if self._projections else self._execute()
 
     def concat(self) -> dict[str, int] | dict[int, int]:
         """Concatenate all matching shot counts into a single dict.
@@ -101,6 +129,8 @@ class ResultsQuery:
         Returns:
             Combined counts from all matching shots.
         """
+        if self._projections:
+            raise TypeError("concat applies to count mappings, not field projections")
         shots = self.client.iter_shots(**self._filters)
 
         if self._as_int:
@@ -118,11 +148,18 @@ class ResultsQuery:
 
     def count(self) -> int:
         """Return the number of matching shots."""
-        return sum(1 for c in self.client.iter_collections(**self._filters) if not c.weighted)
+        return sum(
+            1 for c in self.client.iter_collections(**self._filters) if not c.weighted
+        )
 
-    def first(self) -> Shot | None:
+    def first(self) -> Shot | tuple[Any, ...] | None:
         """Return the first matching shot, or None if no matches."""
-        return next(self.client.iter_shots(**{**self._filters, "limit": 1}), None)
+        shot = next(self.client.iter_shots(**{**self._filters, "limit": 1}), None)
+        if shot is not None and self._projections:
+            from openshots.fields import project
+
+            return tuple(project(descriptor, shot) for descriptor in self._projections)
+        return shot
 
 
 @dataclass
@@ -136,7 +173,9 @@ class FilterCondition:
         return self._conditions.copy()
 
     def __bool__(self):
-        raise TypeError("combine conditions with &: (backend == name) & (n_qubits == width)")
+        raise TypeError(
+            "combine conditions with &: (backend == name) & (n_qubits == width)"
+        )
 
     def __and__(self, other: FilterCondition) -> FilterCondition:
         """Combine two conditions with AND."""
@@ -151,7 +190,7 @@ class FilterField:
 
     name: str
 
-    def __eq__(self, value: Any) -> FilterCondition:  # type: ignore[override]
+    def __eq__(self, value: object) -> FilterCondition:  # type: ignore[override]
         """Create an equality condition."""
         if isinstance(value, _ComparisonLink):
             value.left_field = self.name
@@ -173,10 +212,13 @@ class _ComparisonLink:
     left_value: Any
     right_field: str
     left_field: str | None = None
+
     def __eq__(self, value):
         if self.left_field is None:
             raise TypeError("use parenthesized filter expressions")
-        return FilterCondition({self.left_field: self.left_value, self.right_field: value})
+        return FilterCondition(
+            {self.left_field: self.left_value, self.right_field: value}
+        )
 
 
 def results(client: OSRClient | None = None) -> ResultsQuery:
@@ -192,6 +234,12 @@ def results(client: OSRClient | None = None) -> ResultsQuery:
         >>> for counts in osr.results().filter(backend="ibm_aachen"):
         ...     print(counts)
     """
+    if isinstance(client, (list, tuple)):
+        from openshots.fields import FieldDescriptor
+
+        if not all(isinstance(descriptor, FieldDescriptor) for descriptor in client):
+            raise TypeError("projections must be FieldDescriptor objects")
+        return ResultsQuery(_projections=tuple(client))
     return ResultsQuery(_client=client, _as_int=False)
 
 

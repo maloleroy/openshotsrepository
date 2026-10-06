@@ -9,9 +9,10 @@ Example:
     ...     print(solution, avg)
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable
+from typing import Any
 
 
 class Optimization(Enum):
@@ -65,3 +66,30 @@ counts = FieldDescriptor(name="counts")
 
 probability = FieldDescriptor(name="probability")
 """Extract outcome probabilities from shots."""
+
+
+def project(descriptor: FieldDescriptor, shot):
+    """Project counts/metadata; solution means most frequent outcome, not problem optimality.
+
+    Optimization chooses the numeric tie-break direction for equally frequent
+    outcomes. An absent estimate remains None; no objective is invented.
+    """
+    if descriptor.name == "counts":
+        value = shot.counts
+    elif descriptor.name == "solution":
+        direction = -1 if descriptor.optimization == lower_better else 1
+        state = max(
+            shot.counts,
+            key=lambda state: (shot.counts[state], direction * int(state, 2)),
+        )
+        value = int(state, 2) if descriptor.dtype is int else state
+    elif descriptor.name == "estimate":
+        value = shot.metadata.tags.get("estimate")
+    elif descriptor.name == "probability":
+        total = sum(shot.counts.values())
+        value = {state: count / total for state, count in shot.counts.items()}
+    else:
+        raise ValueError(f"unknown projection {descriptor.name}")
+    if descriptor.dtype is not None and value is not None:
+        value = descriptor.dtype(value)
+    return descriptor.transform(value) if descriptor.transform is not None else value

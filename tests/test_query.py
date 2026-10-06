@@ -1,11 +1,16 @@
 """Tests for the query interface."""
 
-import pytest
-from datetime import datetime
+from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
-from openshots.query import ResultsQuery, results, results_int, FilterField, FilterCondition
 from openshots.models import Shot, ShotMetadata
+from openshots.query import (
+    FilterCondition,
+    FilterField,
+    ResultsQuery,
+    results,
+    results_int,
+)
 
 
 def make_shot(
@@ -21,7 +26,7 @@ def make_shot(
         metadata=ShotMetadata(
             backend=backend,
             n_qubits=n_qubits,
-            timestamp=datetime.now(),
+            timestamp=datetime.now(UTC),
             circuit_hash="test_hash",
         ),
     )
@@ -36,11 +41,7 @@ class TestResultsQuery:
         assert query2._filters == {"backend": "ibm_aachen"}
 
     def test_filter_chaining(self) -> None:
-        query = (
-            ResultsQuery()
-            .filter(backend="ibm_aachen")
-            .filter(n_qubits=5)
-        )
+        query = ResultsQuery().filter(backend="ibm_aachen").filter(n_qubits=5)
         assert query._filters == {"backend": "ibm_aachen", "n_qubits": 5}
 
     def test_filter_with_condition(self) -> None:
@@ -116,7 +117,9 @@ class TestResultsQueryExecution:
         ]
 
         query = ResultsQuery(_client=mock_client)
-        mock_client.iter_collections.return_value = [type("Counts", (), {"weighted": False})() for _ in range(3)]
+        mock_client.iter_collections.return_value = [
+            type("Counts", (), {"weighted": False})() for _ in range(3)
+        ]
         assert query.count() == 3
 
     def test_first(self) -> None:
@@ -167,3 +170,19 @@ class TestModuleLevelFunctions:
         mock_client = MagicMock()
         query = results(mock_client)
         assert query._client is mock_client
+
+
+def test_documented_field_projection_and_tie_direction():
+    from openshots import fields
+    from openshots.fields import project
+
+    shot = make_shot("one", {"00": 5, "11": 5})
+    query = results(
+        [fields.solution(int, fields.lower_better), fields.probability]
+    ).filter(backend="device")
+    mock_client = MagicMock()
+    mock_client.iter_shots.return_value = [shot]
+    query._client = mock_client
+    assert list(query) == [(0, {"00": 0.5, "11": 0.5})]
+    assert project(fields.solution(int, fields.higher_better), shot) == 3
+    assert project(fields.estimate, shot) is None

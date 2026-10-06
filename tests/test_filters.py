@@ -2,7 +2,7 @@
 
 import pytest
 
-from openshots.filters import backend, n_qubits, circuit_hash, circuit, CircuitFilter
+from openshots.filters import backend, circuit, circuit_hash, n_qubits
 from openshots.query import FilterCondition
 
 
@@ -32,6 +32,7 @@ class TestFilterFields:
 class TestCircuitFilter:
     def test_circuit_filter_hashes_input(self) -> None:
         from qiskit import QuantumCircuit
+
         condition = circuit == QuantumCircuit(2)
         result = condition.to_dict()
         assert "circuit_hash" in result
@@ -39,9 +40,12 @@ class TestCircuitFilter:
 
 
 def test_readme_expression_preserves_both_filters():
-    assert (backend == "ibm_aachen" & n_qubits == 5).to_dict() == {"backend": "ibm_aachen", "n_qubits": 5}
+    assert (backend == "ibm_aachen" & n_qubits == 5).to_dict() == {
+        "backend": "ibm_aachen",
+        "n_qubits": 5,
+    }
 
 
 def test_python_and_does_not_silently_drop_a_filter():
     with pytest.raises(TypeError, match="combine"):
-        (backend == "ibm_aachen") and (n_qubits == 5)
+        _ = (backend == "ibm_aachen") and (n_qubits == 5)
