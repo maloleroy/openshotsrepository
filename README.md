@@ -55,6 +55,12 @@ osr.results().filter(backend == "ibm_aachen" & n_qubits == 5)
 # Install dependencies
 uv sync --all-extras
 
+# Install the Git hooks (Pyright before commits, pytest before pushes)
+uv run pre-commit install --hook-type pre-commit --hook-type pre-push
+
+# Run the checks manually
+uv run pyright
+
 # Run tests
 uv run pytest -v
 
