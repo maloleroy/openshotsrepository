@@ -18,6 +18,8 @@ with OSRClient() as client:
 
 Use `store_collection(values, metadata=...)` for count/float mappings, or `store_entries(sorted_entries, metadata=..., idempotency_key=...)` for bounded-memory uploads. Entries must be unique and numerically sorted, states must fit the declared width, and counts must be positive u32. Retries verify the uploaded chunks; changed content under the same key fails. For resumable custom importers, use start_upload/upload_status/put_chunk/finalize_upload.
 
+`store_entries` supplies the expected chunk count at atomic finalization, preventing shorter retries from publishing leftover staged chunks. Custom upload workflows should also use `finalize_upload(id, expected_chunks=N)`; omitting the assertion publishes all staged chunks.
+
 `store_circuit(qc, problem_id=..., qaoa_p=..., data=...)` fingerprints bound QASM3 bytes. Circuits unsupported by QASM3 export (for example initialize) use an explicit artifact-sha256-v1 QPY fingerprint. Use `store_artifact`, `create_resource`, `get_resource` and `iter_resources` for original circuit archives, sources, problems, solutions, calibration and executions. `get_artifact` validates the content checksum. Every server resource ID is UUIDv4; fingerprints are separate content hashes.
 
 ## SamplerCache
@@ -35,5 +37,7 @@ Parent/backend job methods remain available through delegation. Cached jobs retu
 `results([fields.solution(int), fields.estimate])` also supports the field descriptors already exposed by the package. The solution projection means the most frequent observed outcome; it does not assert problem optimality. Missing estimates remain None. Metadata filters such as problem_id, qaoa_p, result_kind, execution time and include_superseded can be passed to `.filter()`; typed distributions use the collection API.
 
 Both the unchanged README expression and ordinary parenthesized `&` expressions work. Python `and` raises an explicit error because it would otherwise drop a condition. Prefer `(backend == name) & (n_qubits == width)`.
+
+The functions in `snippets/` show mitigation callbacks, combined counts, expression filters, field projections and sampler caching. They accept your bound circuit and provider objects explicitly and perform no network calls at module import. These examples are included in the formatting and lint checks.
 
 The server now requires DATABASE_URL for PostgreSQL. See `../server/docs/deployment.md`, `api.md`, `database-design.md` and `importing.md` for startup, immutable versions, binary encoding and historical-data imports. No public deployment is performed by the local test suite.

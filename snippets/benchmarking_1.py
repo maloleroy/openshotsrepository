@@ -1,13 +1,27 @@
+"""Apply your mitigation function to matching stored count collections."""
+
+from collections.abc import Callable
+
+from qiskit import QuantumCircuit
+
 import openshots as osr
 
-def perform_qem(shots: dict[str, int]) -> dict[str, int]:
-	...
 
-i: dict[str, int]
-for i in osr.results().filter(backend="ibm_aachen").filter(circuit=qc):
-	after_qem: dict[str, int] = perform_qem(i)
-	# then compare i and after_qem
+def benchmark(
+    qc: QuantumCircuit,
+    perform_qem: Callable[[dict[str, int]], dict[str, int]],
+    *,
+    backend: str = "ibm_aachen",
+):
+    """Pass a bound measured circuit and your counts-to-counts mitigation function."""
+    query = osr.results().filter(backend=backend).filter(circuit=qc)
+    for before in query:
+        yield before, perform_qem(before)
 
-shots: dict[str, int] = osr.results().filter(circuit=qc).concat()
 
-shots_int: dict[int, int] = osr.results_int().concat()
+def combined_counts(qc: QuantumCircuit, *, backend: str = "ibm_aachen"):
+    return osr.results().filter(backend=backend, circuit=qc).concat()
+
+
+def combined_counts_int(qc: QuantumCircuit, *, backend: str = "ibm_aachen"):
+    return osr.results_int().filter(backend=backend, circuit=qc).concat()

@@ -1,12 +1,14 @@
-from qiskit_ibm_runtime import Sampler
+"""Wrap an existing Qiskit sampler without executing jobs at module import."""
+
+from qiskit import QuantumCircuit
+
 import openshots as osr
 
-qiskit_sampler = Sampler(...)
-sampler = osr.SamplerCache(qiskit_sampler)
-job = sampler.run(qc, shots=1024) # exact same use as the Qiskit sampler
 
-# Here, if the Open Shots Repository contains 1024 or more
-# shots for this circuit, backend and sampler options, it
-# provides the result without needing to re-run the circuit.
-# Otherwise, it simply calls the Qiskit sampler, store the result.
-result = job.result()
+def run_cached(qiskit_sampler, qc: QuantumCircuit, *, shots: int = 1024):
+    """Provide a bound measured circuit appropriate for the sampler's backend."""
+    sampler = osr.SamplerCache(qiskit_sampler)
+    job = sampler.run(qc, shots=shots)
+    # A hit uses raw hardware counts from the same backend and bound circuit.
+    # A miss calls the provider; .result() stores the returned result once.
+    return job, job.result()
